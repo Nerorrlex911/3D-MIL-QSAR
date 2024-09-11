@@ -207,7 +207,7 @@ def process_mol_atom_excl_map(items, descr_num, smarts_features):
 
 
 def main(inp_fname=None, out_fname=None, atom_exclusion=False, factory=None, smarts_features=None,
-         descr_num=[4], remove=0.05, colnames=None, keep_temp=False, ncpu=1, verbose=False):
+         descr_num=[4], remove=0.05, colnames=None, keep_temp=True, ncpu=1, verbose=True):
     """
     WARNING:order of saving conformers/atom-depleted versions will be  same as order of input;
     Only  ordered input (i.e. all conformers of same mol go one by one) gives correct filtering by using parameter remove
@@ -307,9 +307,16 @@ def main(inp_fname=None, out_fname=None, atom_exclusion=False, factory=None, sma
     else:
         # determine frequency of descriptors occurrence and select frequently occurring
         threshold = len(tmp_titles) * remove
-        print(threshold)
+        print(f'threshold: {str(threshold)}')
+        print(f'before remove:{str(len(c.items()))}')
 
         desc_ids = {k for k, v in c.items() if v >= threshold}
+
+        import json
+        with open(os.path.splitext(out_fname)[0] + '.counter','w') as f:
+            f.write(json.dumps(c))
+
+        print(f'after remove:{str(len(desc_ids))}')
 
         # create output files with removed descriptors
 
@@ -320,6 +327,8 @@ def main(inp_fname=None, out_fname=None, atom_exclusion=False, factory=None, sma
                     if i in desc_ids:
                         replace_dict[i] = len(replace_dict)
                         fout.write(line)
+                        if i%100==0:
+                            print(f'index: {i} line: {line}')
 
         with open(os.path.splitext(out_fname)[0] + '.rownames', 'wt') as fmol, open(out_fname, 'wt') as ftxt:
             with open(os.path.splitext(tmp_fname)[0] + '.rownames') as fmol_tmp, open(tmp_fname) as ftxt_tmp:

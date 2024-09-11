@@ -29,7 +29,7 @@ def gen_confs_obabel(rdkit_mol, nconf=50):
     mol = pybel.readstring('mol', Chem.MolToMolBlock(rdkit_mol)).OBMol  # convert mol from RDKit to OB
     mol.AddHydrogens()
 
-    pff = ob.OBForceField_FindType('mmff94')
+    pff = ob.OBForceField.FindType('mmff94')
     if not pff.Setup(mol):  # if OB FF setup fails use RDKit conformer generation (slower)
         print('err')
 
@@ -148,8 +148,8 @@ def main_params(in_fname, out_fname, id_field_name, nconf, energy, rms, ncpu, se
     output_file_type = None
     if out_fname is not None:
 
-        if os.path.isfile(out_fname):
-            os.remove(out_fname)
+        # if os.path.isfile(out_fname):
+        #     os.remove(out_fname)
 
         if out_fname.lower().endswith('.sdf.gz'):
             writer = gzip.open(out_fname, 'a')
