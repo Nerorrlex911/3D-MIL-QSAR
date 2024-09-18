@@ -343,7 +343,7 @@ def main(inp_fname=None, out_fname=None, atom_exclusion=False, factory=None, sma
                         fmol.write(line1)
                         ftxt.write(' '.join(desc_str) + '\n')
 
-        if not keep_temp:
+        if False:
             os.remove(tmp_fname)
             os.remove(os.path.splitext(tmp_fname)[0] + '.colnames')
             os.remove(os.path.splitext(tmp_fname)[0] + '.rownames')

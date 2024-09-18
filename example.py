@@ -14,7 +14,7 @@ def process_data(file_name:str='alltrain',max_conf:int=50):
     #Choose dataset to be modeled and create a folder where the descriptors will be stored
 
     nconfs_list = [1,max_conf] #number of conformations to generate; calculation is time consuming, so here we set 5, for real tasks set 25..100
-    ncpu = 12 # set number of CPU cores 
+    ncpu = 50 # set number of CPU cores 
 
     dataset_file = os.path.join('datasets', f'{file_name}.smi')
     descriptors_folder = os.path.join('descriptors')
@@ -115,7 +115,7 @@ def train(x_train_scaled,x_test_scaled, y_train, y_test, idx_train, idx_test):
 
 if __name__ == '__main__':
     file_name = 'alltrain'#'CHEMBL1075104'#'alltrain'
-    max_conf = 5
+    max_conf = 50
     process_data(file_name,max_conf)
     x_train_scaled,x_test_scaled, y_train, y_test, idx_train, idx_test=load_data(file_name,max_conf)
     net=train(x_train_scaled,x_test_scaled, y_train, y_test, idx_train, idx_test)

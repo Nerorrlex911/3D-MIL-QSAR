@@ -127,6 +127,7 @@ def gen_confs(mol, mol_name, nconf, energy, rms, seed, act, mol_id):
     cids = AllChem.EmbedMultipleConfs(mol, numConfs=nconf, maxAttempts=700, randomSeed=seed)
 
     if len(cids) == 0:
+        print('gen_confs_obabel','molname: '+str(mol_name))
         confs = gen_confs_obabel(mol, nconf=nconf)
         for conf in confs:
             mol.AddConformer(conf.GetConformer())
