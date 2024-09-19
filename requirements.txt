@@ -1,0 +1,10 @@
+joblib
+numpy
+pandas
+scikit-learn
+rdkit==2023.9.4
+networkx
+matplotlib
+pmapper
+torch-optimizer
+seaborn

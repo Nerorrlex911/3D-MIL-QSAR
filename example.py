@@ -115,7 +115,7 @@ def train(x_train_scaled,x_test_scaled, y_train, y_test, idx_train, idx_test):
 
 if __name__ == '__main__':
     file_name = 'alltrain'#'CHEMBL1075104'#'alltrain'
-    max_conf = 50
+    max_conf = 5
     process_data(file_name,max_conf)
     x_train_scaled,x_test_scaled, y_train, y_test, idx_train, idx_test=load_data(file_name,max_conf)
     net=train(x_train_scaled,x_test_scaled, y_train, y_test, idx_train, idx_test)
