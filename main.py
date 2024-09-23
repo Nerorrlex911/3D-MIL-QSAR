@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score,mean_squared_error
 import torch
 import torch_optimizer as optim
 from tqdm import tqdm
@@ -91,7 +91,7 @@ def train(dataset:MolDataSet):
     weight_decay=0.001
     earlystop=False
     patience=30
-    epochs = 300
+    epochs = 1000
     save_path='train'
 
     set_seed(43)
@@ -104,6 +104,7 @@ def train(dataset:MolDataSet):
     # 初始化模型
     model = BagAttentionNet(ndim=(train_dataset[0][0][0].shape[1],256,128,64),det_ndim=(64,64),instance_dropout=instance_dropout)
 
+    logging.info(model)
     model = model.double()
 
     # 检查是否有 CUDA 设备可用
@@ -115,7 +116,7 @@ def train(dataset:MolDataSet):
 
     # 创建 TensorBoard 的 SummaryWriter
     writer = SummaryWriter(log_dir=f'logs/train')
-    criterion = torch.nn.MSELoss()
+    criterion = torch.nn.MSELoss(reduction='mean')
     optimizer = optim.Yogi(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     # 初始化用于保存loss的列表
@@ -153,30 +154,41 @@ def train(dataset:MolDataSet):
         train_losses.append(train_loss/len(train_dataloader))
         # 验证模型
         model.eval()
-        val_loss = 0
-        test_loss = 0
+        # val_loss = 0
+        # test_loss = 0
         with torch.no_grad():
-            for (bags,mask),labels in val_dataloader:
-                bags = bags.cuda()
-                mask = mask.cuda()
-                labels = labels.cuda()
-                weight,outputs = model(bags,mask)
-                loss = criterion(outputs, labels)
-                val_loss += loss.item()
-                if i % 10 == 0:
-                    logging.info(f'Epoch [{epoch + 1}/{epochs}], Val Loss: {loss.item():.4f}')
-            for (bags,mask),labels in test_dataloader:
-                bags = bags.cuda()
-                mask = mask.cuda()
-                labels = labels.cuda()
-                weight,outputs = model(bags,mask)
-                loss = criterion(outputs, labels)
-                test_loss += loss.item()
-                if i % 10 == 0:
-                    logging.info(f'Epoch [{epoch + 1}/{epochs}], Test Loss: {loss.item():.4f}')
-        avg_val_loss = val_loss/len(val_dataloader)
-        val_losses.append(avg_val_loss)
-        test_losses.append(test_loss/len(test_dataloader))
+
+            val_weight,val_outputs = model(val_dataset.bags,val_dataset.mask)
+            val_loss = criterion(val_outputs,val_dataset.labels)
+            logging.info(f'Epoch [{epoch + 1}/{epochs}], Val Loss: {val_loss.item():.4f}')
+            val_losses.append(val_loss.item())
+
+            test_weight,test_outputs = model(test_dataset.bags,test_dataset.mask)
+            test_loss = criterion(test_outputs,test_dataset.labels)
+            logging.info(f'Epoch [{epoch + 1}/{epochs}], Test Loss: {test_loss.item():.4f}')
+            test_losses.append(test_loss.item())
+
+            # for i,((bags,mask),labels) in enumerate(val_dataloader):
+            #     bags = bags.cuda()
+            #     mask = mask.cuda()
+            #     labels = labels.cuda()
+            #     weight,outputs = model(bags,mask)
+            #     loss = criterion(outputs, labels)
+            #     val_loss += loss.item()
+            #     if i % 10 == 0:
+            #         logging.info(f'Epoch [{epoch + 1}/{epochs}], Val Loss: {loss.item():.4f}')
+            # for i,((bags,mask),labels) in enumerate(test_dataloader):
+            #     bags = bags.cuda()
+            #     mask = mask.cuda()
+            #     labels = labels.cuda()
+            #     weight,outputs = model(bags,mask)
+            #     loss = criterion(outputs, labels)
+            #     test_loss += loss.item()
+            #     if i % 10 == 0:
+            #         logging.info(f'Epoch [{epoch + 1}/{epochs}], Test Loss: {loss.item():.4f}')
+        # avg_val_loss = val_loss/len(val_dataloader)
+        # val_losses.append(avg_val_loss)
+        # test_losses.append(test_loss/len(test_dataloader))
 
         min_loss_idx = val_losses.index(min(val_losses))
         if min_loss_idx == epoch:
@@ -184,9 +196,9 @@ def train(dataset:MolDataSet):
             logging.fatal(f'epoch: {epoch},loss: {val_loss}')
 
         if earlystop:
-            earlystopping(avg_val_loss,model)
+            earlystopping(val_loss,model)
             if earlystopping.early_stop:
-                logging.info("Early stopping",f'loss: {str(avg_val_loss)}')
+                logging.info("Early stopping",f'loss: {str(val_loss)}')
                 break
     model.load_state_dict(best_parameters, strict=True)
     loss_data = pd.DataFrame({'train_loss':train_losses,'val_loss':val_losses,'test_loss':test_losses})
@@ -205,7 +217,7 @@ def train(dataset:MolDataSet):
                 labels = labels.cuda()
                 weight, outputs = model(bags, mask)
                 w = weight.view(weight.shape[0], weight.shape[-1]).cpu()
-                w = [i[j.bool().flatten()].detach().numpy() for i, j in zip(w, mask)]
+                w = [i[j.bool().flatten()].detach().numpy() for i, j in zip(w, mask.cpu())]
                 weights.extend(w)
                 y_pred.extend(outputs.cpu().detach().numpy())
                 y_label.extend(labels.cpu().detach().numpy())
@@ -216,13 +228,14 @@ def train(dataset:MolDataSet):
             y_label = np.array(y_label)
             np.savetxt(os.path.join(save_path, f'{file_name}_pred.csv'), np.column_stack((y_label,y_pred)), delimiter=',')
             logging.info(f'R2 score {file_name}:{r2_score(y_label, y_pred)}')
+            logging.info(f'MSE Loss {file_name}:{mean_squared_error(y_label, y_pred)}')
 
         # 使用新的函数来进行训练、测试和验证
         eval_model(train_dataloader, model, save_path, 'train')
         eval_model(test_dataloader, model, save_path, 'test')
         eval_model(val_dataloader, model, save_path, 'val')
     
-    return net
+    return model
 
 if __name__ == '__main__':
     logging.basicConfig(
@@ -233,10 +246,10 @@ if __name__ == '__main__':
     )
     logging.info('------------start------------')
     file_name = 'alltrain'#'CHEMBL1075104'#'alltrain'
-    max_conf = 5
+    max_conf = 50
     #process_data(file_name,max_conf)
     dataset=load_data(file_name,max_conf)
-    net=train(dataset)
+    model=train(dataset)
 
 
 

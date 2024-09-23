@@ -42,7 +42,7 @@ class Detector(nn.Module):
     def __new__(cls, input_dim:int, det_dim: Sequence):
         input_dim = input_dim
         attention = []
-        for dim in det_dim[1:]:
+        for dim in det_dim:
             attention.append(Linear(input_dim, dim))
             attention.append(Sigmoid())
             input_dim = dim
@@ -73,11 +73,23 @@ class BagAttentionNet(nn.Module):
 
         """
         super().__init__()
-        input_dim = ndim[-1]
-        self.main_net = MainNet(ndim)
-        self.estimator = Estimator(input_dim)
-        self.detector = Detector(input_dim, det_ndim)
         self.instance_dropout = instance_dropout
+        # input_dim = ndim[-1]
+        # self.main_net = MainNet(ndim)
+        # self.estimator = Estimator(input_dim)
+        # self.detector = Detector(input_dim, det_ndim)
+        self.main_net = MainNet(ndim)
+        self.estimator = Linear(ndim[-1], 1)
+        #
+        input_dim = ndim[-1]
+        attention = []
+        for dim in det_ndim:
+            attention.append(Linear(input_dim, dim))
+            attention.append(Sigmoid())
+            input_dim = dim
+        attention.append(Linear(input_dim, 1))
+        self.detector = Sequential(*attention)
+        
 
 
     def forward(self, x: torch.Tensor, m: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
