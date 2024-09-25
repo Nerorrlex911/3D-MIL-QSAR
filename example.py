@@ -1,4 +1,5 @@
 import os
+from miqsar.model.BagAttention import BagAttention
 from miqsar.utils import calc_3d_pmapper
 import os
 import pickle
@@ -6,7 +7,6 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-from miqsar.estimators.wrappers import InstanceWrapperMLPRegressor
 from miqsar.estimators.attention_nets import AttentionNetRegressor
 from miqsar.estimators.utils import set_seed
 
@@ -104,7 +104,8 @@ def train(x_train_scaled,x_test_scaled, y_train, y_test, idx_train, idx_test):
     init_cuda = True                                  # True if GPU is available
 
 
-    net = AttentionNetRegressor(ndim=ndim, det_ndim=det_dim, init_cuda=init_cuda)
+    net = BagAttention(ndim=ndim, det_ndim=det_dim, init_cuda=init_cuda)
+    print(net)
     net.fit(x_train_scaled, y_train, 
             n_epoch=n_epoch, 
             lr=lr,
@@ -115,8 +116,8 @@ def train(x_train_scaled,x_test_scaled, y_train, y_test, idx_train, idx_test):
 
 if __name__ == '__main__':
     file_name = 'alltrain'#'CHEMBL1075104'#'alltrain'
-    max_conf = 5
-    process_data(file_name,max_conf)
+    max_conf = 50
+    #process_data(file_name,max_conf)
     x_train_scaled,x_test_scaled, y_train, y_test, idx_train, idx_test=load_data(file_name,max_conf)
     net=train(x_train_scaled,x_test_scaled, y_train, y_test, idx_train, idx_test)
 
@@ -129,7 +130,7 @@ if __name__ == '__main__':
 
     y_train_pred = net.predict(x_train_scaled)
 
-    print('3D/MI/AttentionNet: r2_score test = {:.2f}'.format(r2_score(y_train, y_train_pred)))
+    print('3D/MI/AttentionNet: r2_score train = {:.2f}'.format(r2_score(y_train, y_train_pred)))
 
 
 
