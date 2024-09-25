@@ -319,7 +319,8 @@ def main(inp_fname=None, out_fname=None, atom_exclusion=False, factory=None, sma
         print(f'after remove:{str(len(desc_ids))}')
 
         # create output files with removed descriptors
-
+        first_id = []
+        result = int(0)
         replace_dict = dict()  # old_id, new_id
         with open(os.path.splitext(out_fname)[0] + '.colnames', 'wt') as fout:
             with open(os.path.splitext(tmp_fname)[0] + '.colnames') as fin:
@@ -327,6 +328,8 @@ def main(inp_fname=None, out_fname=None, atom_exclusion=False, factory=None, sma
                     if i in desc_ids:
                         replace_dict[i] = len(replace_dict)
                         fout.write(line)
+                        if line=='AH7H9a7|HA7H2a0|HA9H2a2|aA7H0H2|0|0|1':
+                            first_id.append(len(replace_dict))
                         if i%100==0:
                             print(f'index: {i} line: {line}')
 
@@ -337,11 +340,15 @@ def main(inp_fname=None, out_fname=None, atom_exclusion=False, factory=None, sma
                     for item in line2.strip().split(' '):
                         i, v = item.split(':')
                         i = int(i)
+                        if len(first_id)>0 & i==first_id[0]:
+                            print(f'counter[AH7H9a7|HA7H2a0|HA9H2a2|aA7H0H2|0|0|1] = {str(v)}')
+                            result = result+int(v)
                         if i in replace_dict:
                             desc_str.append(f'{replace_dict[i]}:{v}')
                     if desc_str:
                         fmol.write(line1)
                         ftxt.write(' '.join(desc_str) + '\n')
+        print(f'counter[AH7H9a7|HA7H2a0|HA9H2a2|aA7H0H2|0|0|1] result = {str(result)}')
 
         if False:
             os.remove(tmp_fname)
