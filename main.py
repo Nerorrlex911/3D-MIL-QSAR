@@ -1,3 +1,4 @@
+from datetime import datetime
 import logging
 import os
 import sys
@@ -86,7 +87,7 @@ def train(
         dataset:MolDataSet,
         batch_size = 16,
         instance_dropout = 0.95,
-        lr=0.001,
+        lr=0.01,
         weight_decay=0.001,
         earlystop=False,
         patience=30,
@@ -115,7 +116,7 @@ def train(
         model = torch.nn.DataParallel(model)
 
     # 创建 TensorBoard 的 SummaryWriter
-    writer = SummaryWriter(log_dir=f'logs/train')
+    writer = SummaryWriter(log_dir=os.path.join(save_path,'tensorboard'))
     criterion = torch.nn.MSELoss(reduction='mean')
     optimizer = optim.Yogi(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = ExponentialLR(optimizer=optimizer,gamma=0.9)
@@ -232,7 +233,9 @@ if __name__ == '__main__':
     max_conf = 50
     #process_data(file_name,max_conf)
     dataset=load_data(file_name,max_conf)
-    model=train(dataset)
+    lr_list = [ 0.001,0.005,0.01,0.02,0.03,0.05,0.07,0.1 ]
+    for lr in lr_list:
+        model=train(dataset,lr=lr,save_path=f'{str(datetime.now())}_lr={str(lr)}')
 
 
 
