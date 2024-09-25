@@ -150,7 +150,8 @@ def train(
                 logging.info(f'Epoch [{epoch + 1}/{epochs}], Step [{i + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}')
         # 记录损失和学习率到 TensorBoard
         # writer.add_scalar('Train Loss', loss.item(), i+(epoch+1)*batch_amount)
-        writer.add_scalar('Learning Rate', lr, i+(epoch+1)*batch_amount)
+        scheduler.step()
+        writer.add_scalar('Learning Rate', scheduler.get_last_lr()[0], epoch)
         # train_losses.append(train_loss/len(train_dataloader))
         # 验证模型
         model.eval()
