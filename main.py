@@ -19,7 +19,7 @@ from sklearn.model_selection import train_test_split
 from miqsar.estimators.utils import set_seed
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torch.optim.lr_scheduler import LinearLR,ExponentialLR
+from torch.optim.lr_scheduler import StepLR
 
 def process_data(file_name:str='alltrain',max_conf:int=50):
     #Choose dataset to be modeled and create a folder where the descriptors will be stored
@@ -119,7 +119,7 @@ def train(
     writer = SummaryWriter(log_dir=os.path.join(save_path,'tensorboard'))
     criterion = torch.nn.MSELoss(reduction='mean')
     optimizer = optim.Yogi(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = ExponentialLR(optimizer=optimizer,gamma=0.9)
+    scheduler = StepLR(optimizer=optimizer,gamma=0.9,step_size=10)
 
     # 初始化用于保存loss的列表
     train_losses = []
@@ -211,8 +211,14 @@ def train(
             y_pred = np.array(y_pred)
             y_label = np.array(y_label)
             np.savetxt(os.path.join(save_path, f'{file_name}_pred.csv'), np.column_stack((y_label,y_pred)), delimiter=',')
-            logging.info(f'R2 score {file_name}:{r2_score(y_label, y_pred)}')
-            logging.info(f'MSE Loss {file_name}:{mean_squared_error(y_label, y_pred)}')
+            r2 = r2_score(y_label, y_pred)
+            mse = mean_squared_error(y_label, y_pred)
+            # 将R2 score保存到txt文件
+            with open(os.path.join(save_path, f'{file_name}_r2_score.txt'), 'w') as f:
+                f.write(f'R2 score {file_name}: {r2}\n')
+                f.write(f'MSE Loss {file_name}: {mse}\n')
+            logging.info(f'R2 score {file_name}:{r2}')
+            logging.info(f'MSE Loss {file_name}:{mse}')
 
         # 使用新的函数来进行训练、测试和验证
         eval_model(train_dataloader, model, save_path, 'train')
@@ -233,9 +239,9 @@ if __name__ == '__main__':
     max_conf = 50
     #process_data(file_name,max_conf)
     dataset=load_data(file_name,max_conf)
-    lr_list = [ 0.001,0.005,0.01,0.02,0.03,0.05,0.07,0.1 ]
+    lr_list = [ 0.02,0.03,0.05,0.07,0.1,0.2,0.3,0.5,0.7 ]
     for lr in lr_list:
-        model=train(dataset,lr=lr,save_path=f'{str(datetime.now())}_lr={str(lr)}')
+        model=train(dataset,lr=lr,save_path=os.path.join('train',f'{str(datetime.now())}_lr={str(lr)}'))
 
 
 
