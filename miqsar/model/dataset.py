@@ -4,19 +4,16 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 import torch
 from torch.utils.data import DataLoader,Dataset
-def scale_data(x_train, x_val, x_test):
-    scaler = MinMaxScaler(feature_range=(0, 1))
+def scale_data(x_train, x_test):
+    scaler = MinMaxScaler()
     scaler.fit(np.vstack(x_train))
-    x_train_scaled = x_train.clone()
-    x_val_scaled = x_val.clone()
-    x_test_scaled = x_test.clone()
+    x_train_scaled = np.array(x_train)
+    x_test_scaled = np.array(x_test)
     for i, bag in enumerate(x_train):
-        x_train_scaled[i] = torch.from_numpy(scaler.transform(bag))
-    for i, bag in enumerate(x_val):
-        x_val_scaled[i] = torch.from_numpy(scaler.transform(bag))
+        x_train_scaled[i] = scaler.transform(bag)
     for i, bag in enumerate(x_test):
-        x_test_scaled[i] = torch.from_numpy(scaler.transform(bag))
-    return np.array(x_train_scaled), np.array(x_val_scaled), np.array(x_test_scaled)
+        x_test_scaled[i] = scaler.transform(bag)
+    return np.array(x_train_scaled), np.array(x_test_scaled)
 class MolDataSet(Dataset):
     def __init__(self,bags,labels) -> None:
         bags,mask = self.add_padding(bags)
@@ -25,7 +22,11 @@ class MolDataSet(Dataset):
         # mask: Nmol*Nconf*1 标记哪些构象是有效的，在训练过程中去除噪点
         self.mask = torch.from_numpy(mask)
         # labels: Nmol
-        self.labels = labels
+        labels = labels.reshape(-1,1)
+        if isinstance(labels,torch.Tensor):
+            self.labels = labels 
+        else:
+            self.labels = torch.from_numpy(labels)
                    
     def __len__(self):
         return self.bags.shape[0]
@@ -73,9 +74,7 @@ class MolDataSet(Dataset):
         out_bags = np.asarray(out)
         return out_bags, mask
     def preprocess(self):
-        # 首先，将数据集划分为训练集和测试集（70%训练，30%测试）
-        x_train, x_test, y_train, y_test = train_test_split(self.bags, self.labels, test_size=0.3, random_state=42)
-        # 接下来，将测试集划分为验证集和测试集（10%验证，20%测试）
-        x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=0.67, random_state=42)
-        x_train_scaled, x_val_scaled, x_test_scaled = scale_data(x_train, x_val, x_test)
+        x_train, x_test, y_train, y_test = train_test_split(self.bags, self.labels, test_size=0.25)
+        x_train_scaled, x_test_scaled = scale_data(x_train, x_test)
+        x_train_scaled, x_val_scaled, y_train, y_val = train_test_split(x_train_scaled, y_train, test_size=0.2,random_state=42)
         return MolDataSet(x_train_scaled,y_train),MolDataSet(x_val_scaled,y_val),MolDataSet(x_test_scaled,y_test)

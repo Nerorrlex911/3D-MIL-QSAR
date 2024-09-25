@@ -15,12 +15,10 @@ import pickle
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
-from miqsar.estimators.wrappers import InstanceWrapperMLPRegressor
-from miqsar.estimators.attention_nets import AttentionNetRegressor
 from miqsar.estimators.utils import set_seed
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from torch.optim.lr_scheduler import LinearLR,ExponentialLR
 
 def process_data(file_name:str='alltrain',max_conf:int=50):
     #Choose dataset to be modeled and create a folder where the descriptors will be stored
@@ -84,18 +82,21 @@ def load_data(file_name:str='alltrain',nconf:int=20):
     dataset = MolDataSet(bags,labels)
 
     return dataset
-def train(dataset:MolDataSet):
-    batch_size = 16
-    instance_dropout = 0.95
-    lr=0.001
-    weight_decay=0.001
-    earlystop=False
-    patience=30
-    epochs = 1000
-    save_path='train'
+def train(
+        dataset:MolDataSet,
+        batch_size = 16,
+        instance_dropout = 0.95,
+        lr=0.001,
+        weight_decay=0.001,
+        earlystop=False,
+        patience=30,
+        epochs = 1000,
+        save_path='train'
+    ):
 
     set_seed(43)
-    train_dataset,test_dataset,val_dataset = dataset.preprocess()
+    train_dataset,val_dataset,test_dataset = dataset.preprocess()
+    logging.info(f'train: {len(train_dataset)},val: {len(val_dataset)},test: {len(test_dataset)}')
     train_dataloader = DataLoader(dataset=train_dataset,batch_size=batch_size,shuffle=True)
     batch_amount = len(train_dataloader)
     test_dataloader = DataLoader(dataset=test_dataset,batch_size=1,shuffle=True)
@@ -104,7 +105,6 @@ def train(dataset:MolDataSet):
     # 初始化模型
     model = BagAttentionNet(ndim=(train_dataset[0][0][0].shape[1],256,128,64),det_ndim=(64,64),instance_dropout=instance_dropout)
 
-    logging.info(model)
     model = model.double()
 
     # 检查是否有 CUDA 设备可用
@@ -118,6 +118,7 @@ def train(dataset:MolDataSet):
     writer = SummaryWriter(log_dir=f'logs/train')
     criterion = torch.nn.MSELoss(reduction='mean')
     optimizer = optim.Yogi(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = ExponentialLR(optimizer=optimizer,gamma=0.9)
 
     # 初始化用于保存loss的列表
     train_losses = []
@@ -145,55 +146,36 @@ def train(dataset:MolDataSet):
             optimizer.step()
             #scheduler.step()  # 更新学习率
 
-            # 记录损失和学习率到 TensorBoard
-            writer.add_scalar('Loss', loss.item(), i+(epoch+1)*batch_amount)
-            writer.add_scalar('Learning Rate', lr, i+(epoch+1)*batch_amount)
-
             if i % 10 == 0:
                 logging.info(f'Epoch [{epoch + 1}/{epochs}], Step [{i + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}')
-        train_losses.append(train_loss/len(train_dataloader))
+        # 记录损失和学习率到 TensorBoard
+        # writer.add_scalar('Train Loss', loss.item(), i+(epoch+1)*batch_amount)
+        writer.add_scalar('Learning Rate', lr, i+(epoch+1)*batch_amount)
+        # train_losses.append(train_loss/len(train_dataloader))
         # 验证模型
         model.eval()
-        # val_loss = 0
-        # test_loss = 0
         with torch.no_grad():
 
-            val_weight,val_outputs = model(val_dataset.bags,val_dataset.mask)
-            val_loss = criterion(val_outputs,val_dataset.labels)
-            logging.info(f'Epoch [{epoch + 1}/{epochs}], Val Loss: {val_loss.item():.4f}')
-            val_losses.append(val_loss.item())
+            def calc_loss(dataset, name):
+                weights, outputs = model(dataset.bags.cuda(), dataset.mask.cuda())
+                loss = criterion(outputs, dataset.labels.cuda())
+                logging.info(f'Epoch [{epoch + 1}/{epochs}], {name} Loss: {loss.item():.4f}')
+                writer.add_scalar(f'{name} Loss MSE',loss.item(),epoch)
+                return loss.item()
+            
+            train_loss = calc_loss(train_dataset, 'Train')
+            train_losses.append(train_loss)
+            
+            val_loss = calc_loss(val_dataset, 'Val')
+            val_losses.append(val_loss)
 
-            test_weight,test_outputs = model(test_dataset.bags,test_dataset.mask)
-            test_loss = criterion(test_outputs,test_dataset.labels)
-            logging.info(f'Epoch [{epoch + 1}/{epochs}], Test Loss: {test_loss.item():.4f}')
-            test_losses.append(test_loss.item())
-
-            # for i,((bags,mask),labels) in enumerate(val_dataloader):
-            #     bags = bags.cuda()
-            #     mask = mask.cuda()
-            #     labels = labels.cuda()
-            #     weight,outputs = model(bags,mask)
-            #     loss = criterion(outputs, labels)
-            #     val_loss += loss.item()
-            #     if i % 10 == 0:
-            #         logging.info(f'Epoch [{epoch + 1}/{epochs}], Val Loss: {loss.item():.4f}')
-            # for i,((bags,mask),labels) in enumerate(test_dataloader):
-            #     bags = bags.cuda()
-            #     mask = mask.cuda()
-            #     labels = labels.cuda()
-            #     weight,outputs = model(bags,mask)
-            #     loss = criterion(outputs, labels)
-            #     test_loss += loss.item()
-            #     if i % 10 == 0:
-            #         logging.info(f'Epoch [{epoch + 1}/{epochs}], Test Loss: {loss.item():.4f}')
-        # avg_val_loss = val_loss/len(val_dataloader)
-        # val_losses.append(avg_val_loss)
-        # test_losses.append(test_loss/len(test_dataloader))
+            test_loss = calc_loss(test_dataset, 'Test')
+            test_losses.append(test_loss)
 
         min_loss_idx = val_losses.index(min(val_losses))
         if min_loss_idx == epoch:
             best_parameters = model.state_dict()
-            logging.fatal(f'epoch: {epoch},loss: {val_loss}')
+            logging.fatal(f'loss decreased, epoch: {epoch},loss: {val_loss}')
 
         if earlystop:
             earlystopping(val_loss,model)
