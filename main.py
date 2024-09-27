@@ -88,6 +88,8 @@ def train(
         batch_size = 16,
         instance_dropout = 0.95,
         lr=0.01,
+        gamma=0.95,
+        step=10,
         weight_decay=0.001,
         earlystop=False,
         patience=30,
@@ -119,7 +121,7 @@ def train(
     writer = SummaryWriter(log_dir=os.path.join(save_path,'tensorboard'))
     criterion = torch.nn.MSELoss(reduction='mean')
     optimizer = optim.Yogi(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = StepLR(optimizer=optimizer,gamma=0.9,step_size=10)
+    scheduler = StepLR(optimizer=optimizer,gamma=gamma,step_size=10)
 
     # 初始化用于保存loss的列表
     train_losses = []
@@ -239,9 +241,13 @@ if __name__ == '__main__':
     max_conf = 50
     #process_data(file_name,max_conf)
     dataset=load_data(file_name,max_conf)
-    lr_list = [ 0.02,0.03,0.05,0.07,0.1,0.2,0.3,0.5,0.7 ]
+    lr_list = [ 0.5 ]
+    gamma_list = [ 0.9,0.95,0.97,0.99 ]
+    step_list = [ 10,20,30,40,50 ]
     for lr in lr_list:
-        model=train(dataset,lr=lr,save_path=os.path.join('train',f'{str(datetime.now())}_lr={str(lr)}'))
+        for gamma in gamma_list:
+            for step in step_list:
+                model=train(dataset,lr=lr,gamma=gamma,step=step,save_path=os.path.join('train',f'lr={str(lr)}_step={str(step)}_gamma={str(gamma)}_{str(datetime.now())}'))
 
 
 
