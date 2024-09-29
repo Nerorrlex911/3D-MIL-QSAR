@@ -19,7 +19,7 @@ from sklearn.model_selection import train_test_split
 from miqsar.estimators.utils import set_seed
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR,ReduceLROnPlateau
 
 def process_data(file_name:str='alltrain',max_conf:int=50):
     #Choose dataset to be modeled and create a folder where the descriptors will be stored
@@ -121,7 +121,7 @@ def train(
     writer = SummaryWriter(log_dir=os.path.join(save_path,'tensorboard'))
     criterion = torch.nn.MSELoss(reduction='mean')
     optimizer = optim.Yogi(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = StepLR(optimizer=optimizer,gamma=gamma,step_size=10)
+    scheduler = ReduceLROnPlateau(optimizer=optimizer, mode='min', factor=gamma, patience=step,)
 
     # 初始化用于保存loss的列表
     train_losses = []
@@ -153,8 +153,6 @@ def train(
                 logging.info(f'Epoch [{epoch + 1}/{epochs}], Step [{i + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}')
         # 记录损失和学习率到 TensorBoard
         # writer.add_scalar('Train Loss', loss.item(), i+(epoch+1)*batch_amount)
-        scheduler.step()
-        writer.add_scalar('Learning Rate', scheduler.get_last_lr()[0], epoch)
         # train_losses.append(train_loss/len(train_dataloader))
         # 验证模型
         model.eval()
@@ -180,6 +178,8 @@ def train(
         if min_loss_idx == epoch:
             best_parameters = model.state_dict()
             logging.fatal(f'loss decreased, epoch: {epoch},loss: {val_loss}')
+        scheduler.step(val_loss)
+        writer.add_scalar('Learning Rate', scheduler.get_last_lr()[0], epoch)
 
         if earlystop:
             earlystopping(val_loss,model)
@@ -241,13 +241,13 @@ if __name__ == '__main__':
     max_conf = 50
     #process_data(file_name,max_conf)
     dataset=load_data(file_name,max_conf)
-    lr_list = [ 0.5 ]
-    gamma_list = [ 0.9,0.95,0.97,0.99 ]
-    step_list = [ 10,20,30,40,50 ]
+    lr_list = [ 0.02,0.05,0.1 ]
+    gamma_list = [ 0.1,0.2,0.3 ]
+    step_list = [ 10,30,50 ]
     for lr in lr_list:
         for gamma in gamma_list:
             for step in step_list:
-                model=train(dataset,lr=lr,gamma=gamma,step=step,save_path=os.path.join('train',f'lr={str(lr)}_step={str(step)}_gamma={str(gamma)}_{str(datetime.now())}'))
+                model=train(dataset,lr=lr,gamma=gamma,step=step,save_path=os.path.join('train',f'ReduceLROnPlateau_lr={str(lr)}_step={str(step)}_gamma={str(gamma)}_{str(datetime.now())}'))
 
 
 
