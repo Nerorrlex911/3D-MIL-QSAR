@@ -179,7 +179,7 @@ def train(
             best_parameters = model.state_dict()
             logging.fatal(f'loss decreased, epoch: {epoch},loss: {val_loss}')
         scheduler.step(val_loss)
-        writer.add_scalar('Learning Rate', scheduler.get_last_lr()[0], epoch)
+        writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], epoch)
 
         if earlystop:
             earlystopping(val_loss,model)
