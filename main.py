@@ -238,8 +238,8 @@ if __name__ == '__main__':
     )
     logging.info('------------start------------')
     file_name = 'alltrain'#'CHEMBL1075104'#'alltrain'
-    max_conf = 50
-    #process_data(file_name,max_conf)
+    max_conf = 80
+    process_data(file_name,max_conf)
     dataset=load_data(file_name,max_conf)
     lr_list = [ 0.02,0.05,0.1 ]
     gamma_list = [ 0.1,0.2,0.3 ]
