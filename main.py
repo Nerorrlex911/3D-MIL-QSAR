@@ -85,7 +85,7 @@ def load_data(file_name:str='alltrain',nconf:int=20):
     return dataset
 def train(
         dataset:MolDataSet,
-        batch_size = 16,
+        batch_size = 32,
         instance_dropout = 0.95,
         lr=0.01,
         gamma=0.95,
@@ -109,6 +109,8 @@ def train(
     model = BagAttentionNet(ndim=(train_dataset[0][0][0].shape[1],256,128,64),det_ndim=(64,64),instance_dropout=instance_dropout)
 
     model = model.double()
+
+    print(model)
 
     # 检查是否有 CUDA 设备可用
     if torch.cuda.is_available():
@@ -184,7 +186,7 @@ def train(
         if earlystop:
             earlystopping(val_loss,model)
             if earlystopping.early_stop:
-                logging.info("Early stopping",f'loss: {str(val_loss)}')
+                logging.info(f'Early stopping, loss: {str(val_loss)}')
                 break
     model.load_state_dict(best_parameters, strict=True)
     loss_data = pd.DataFrame({'train_loss':train_losses,'val_loss':val_losses,'test_loss':test_losses})
@@ -238,16 +240,18 @@ if __name__ == '__main__':
     )
     logging.info('------------start------------')
     file_name = 'alltrain'#'CHEMBL1075104'#'alltrain'
-    max_conf = 80
-    process_data(file_name,max_conf)
+    max_conf = 50
+    #process_data(file_name,max_conf)
     dataset=load_data(file_name,max_conf)
-    lr_list = [ 0.02,0.05,0.1 ]
-    gamma_list = [ 0.1,0.2,0.3 ]
-    step_list = [ 10,30,50 ]
+    lr_list = [ 0.1 ]
+    gamma_list = [ 0.1 ]
+    step_list = [ 10 ]
     for lr in lr_list:
         for gamma in gamma_list:
             for step in step_list:
-                model=train(dataset,lr=lr,gamma=gamma,step=step,save_path=os.path.join('train',f'ReduceLROnPlateau_lr={str(lr)}_step={str(step)}_gamma={str(gamma)}_{str(datetime.now())}'))
+                current_time = datetime.now().strftime('%Y-%m-%d_%H-%M')
+                save_path = os.path.join('train', f'ReduceLROnPlateau_lr={str(lr)}_step={str(step)}_gamma={str(gamma)}_{current_time}')
+                model = train(dataset, lr=lr, gamma=gamma, step=step, save_path=save_path,earlystop=True,patience=40,weight_decay=0.01)
 
 
 

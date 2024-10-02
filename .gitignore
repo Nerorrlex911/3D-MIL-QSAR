@@ -133,3 +133,4 @@ descriptors
 
 logs/
 train/
+checkpoint.pt

@@ -1,9 +1,28 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader,Dataset
-from torch.nn import Linear, ReLU, Sequential, Sigmoid
+from torch.nn import Linear, ReLU, Sequential, Sigmoid,Softmax
 from typing import Sequence, Tuple
 
+class WeightsDropout(nn.Module):
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+
+    def forward(self, w):
+        if self.p == 0:
+            return w
+        d0 = [[i] for i in range(len(w))]
+        d1 = w.argsort(dim=2)[:, :, :int(w.shape[2] * self.p)]
+        d1 = [i.reshape(1, -1)[0].tolist() for i in d1]
+        #
+        w_new = w.clone()
+        w_new[d0, :, d1] = 0
+        #
+        d1 = [i[0].nonzero().flatten().tolist() for i in w_new]
+        w_new[d0, :, d1] = Softmax(dim=1)(w_new[d0, :, d1])
+        return w_new
+    
 class MainNet:
     """
     Abstract class not intended to be invoked directly.
@@ -38,7 +57,7 @@ class MainNet:
 
         return net
     
-class Detector(nn.Module):
+class Detector:
     def __new__(cls, input_dim:int, det_dim: Sequence):
         input_dim = input_dim
         attention = []
@@ -50,7 +69,7 @@ class Detector(nn.Module):
         net = Sequential(*attention)
         return net
     
-class Estimator(nn.Module):
+class Estimator:
     def __new__(cls, input_dim:int):
         net = Linear(input_dim, 1)
         return net
@@ -58,7 +77,7 @@ class Estimator(nn.Module):
 
     
 class BagAttentionNet(nn.Module):
-    def __init__(self, ndim: Sequence, det_ndim: Sequence, instance_dropout:int=0.05):
+    def __init__(self, ndim: Sequence, det_ndim: Sequence, instance_dropout=0.95, weights_dropout=0.7):
         """
         Parameters
         ----------
@@ -74,21 +93,21 @@ class BagAttentionNet(nn.Module):
         """
         super().__init__()
         self.instance_dropout = instance_dropout
-        # input_dim = ndim[-1]
-        # self.main_net = MainNet(ndim)
-        # self.estimator = Estimator(input_dim)
-        # self.detector = Detector(input_dim, det_ndim)
-        self.main_net = MainNet(ndim)
-        self.estimator = Linear(ndim[-1], 1)
-        #
         input_dim = ndim[-1]
-        attention = []
-        for dim in det_ndim:
-            attention.append(Linear(input_dim, dim))
-            attention.append(Sigmoid())
-            input_dim = dim
-        attention.append(Linear(input_dim, 1))
-        self.detector = Sequential(*attention)
+        self.main_net = MainNet(ndim)
+        self.estimator = Estimator(input_dim)
+        self.detector = Detector(input_dim, det_ndim)
+        self.weights_dropout = WeightsDropout(p=weights_dropout)
+        # self.main_net = MainNet(ndim)
+        # self.estimator = Linear(ndim[-1], 1)
+        # input_dim = ndim[-1]
+        # attention = []
+        # for dim in det_ndim:
+        #     attention.append(Linear(input_dim, dim))
+        #     attention.append(Sigmoid())
+        #     input_dim = dim
+        # attention.append(Linear(input_dim, 1))
+        # self.detector = Sequential(*attention)
         
 
 
@@ -124,6 +143,8 @@ class BagAttentionNet(nn.Module):
         x_det = torch.transpose(m * self.detector(x), 2, 1)
 
         w = nn.functional.gumbel_softmax(x_det, tau=self.instance_dropout, dim=2)
+
+        w = self.weights_dropout(w)
 
         x = torch.bmm(w, x)
         out = self.estimator(x)
