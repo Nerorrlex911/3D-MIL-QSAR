@@ -85,7 +85,7 @@ def load_data(file_name:str='alltrain',nconf:int=20):
     return dataset
 def train(
         dataset:MolDataSet,
-        batch_size = 32,
+        batch_size = 1,
         instance_dropout = 0.95,
         lr=0.01,
         gamma=0.95,
@@ -243,7 +243,7 @@ if __name__ == '__main__':
     max_conf = 50
     #process_data(file_name,max_conf)
     dataset=load_data(file_name,max_conf)
-    lr_list = [ 0.1 ]
+    lr_list = [ 0.01 ]
     gamma_list = [ 0.1 ]
     step_list = [ 10 ]
     for lr in lr_list:
