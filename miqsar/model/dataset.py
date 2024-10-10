@@ -74,7 +74,7 @@ class MolDataSet(Dataset):
         out_bags = np.asarray(out)
         return out_bags, mask
     def preprocess(self):
-        x_train, x_test, y_train, y_test = train_test_split(self.bags, self.labels, test_size=0.1,random_state=45)
+        x_train, x_test, y_train, y_test = train_test_split(self.bags, self.labels, test_size=0.1)
         x_train_scaled, x_test_scaled = scale_data(x_train, x_test)
-        x_train_scaled, x_val_scaled, y_train, y_val = train_test_split(x_train_scaled, y_train, test_size=0.1,random_state=43)
+        x_train_scaled, x_val_scaled, y_train, y_val = train_test_split(x_train_scaled, y_train, test_size=0.1)
         return MolDataSet(x_train_scaled,y_train),MolDataSet(x_val_scaled,y_val),MolDataSet(x_test_scaled,y_test)
