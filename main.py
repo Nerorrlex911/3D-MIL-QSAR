@@ -239,6 +239,7 @@ if __name__ == '__main__':
         handlers=[logging.StreamHandler(sys.stdout),logging.FileHandler('debug.log')]  # 添加这一行
     )
     logging.info('------------start------------')
+    np.random.seed(42)
     file_name = 'alltrain'#'CHEMBL1075104'#'alltrain'
     max_conf = 50
     #process_data(file_name,max_conf)
