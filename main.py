@@ -244,9 +244,9 @@ if __name__ == '__main__':
     max_conf = 50
     #process_data(file_name,max_conf)
     dataset=load_data(file_name,max_conf)
-    lr_list = [ 0.01 ]
-    gamma_list = [ 0.1 ]
-    step_list = [ 10 ]
+    lr_list = [ 0.005,0.01,0.02,0.05 ]
+    gamma_list = [ 0.1,0.2,0.3 ]
+    step_list = [ 10,20,30 ]
     for lr in lr_list:
         for gamma in gamma_list:
             for step in step_list:
