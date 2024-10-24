@@ -1,6 +1,6 @@
 from typing import Sequence, Tuple, Union
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold, train_test_split
 from sklearn.preprocessing import MinMaxScaler
 import torch
 from torch.utils.data import DataLoader,Dataset
@@ -78,3 +78,11 @@ class MolDataSet(Dataset):
         x_train_scaled, x_test_scaled = scale_data(x_train, x_test)
         x_train_scaled, x_val_scaled, y_train, y_val = train_test_split(x_train_scaled, y_train, test_size=0.1)
         return MolDataSet(x_train_scaled,y_train),MolDataSet(x_val_scaled,y_val),MolDataSet(x_test_scaled,y_test)
+    def cross_val_split(self, n_splits=10):
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+        datasets = []
+        for train_index, val_index in kf.split(self.bags):
+            x_train, x_val = self.bags[train_index], self.bags[val_index]
+            y_train, y_val = self.labels[train_index], self.labels[val_index]
+            datasets.append((MolDataSet(x_train, y_train), MolDataSet(x_val, y_val)))
+        return datasets

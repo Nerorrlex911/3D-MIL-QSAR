@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 
-from sklearn.metrics import r2_score,mean_squared_error
+from sklearn.metrics import r2_score,mean_squared_error,mean_absolute_error,explained_variance_score,median_absolute_error
 import torch
 import torch_optimizer as optim
 from tqdm import tqdm
@@ -15,11 +15,11 @@ import os
 import pickle
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold, train_test_split
 from miqsar.estimators.utils import set_seed
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torch.optim.lr_scheduler import StepLR,ReduceLROnPlateau
+from torch.optim.lr_scheduler import StepLR,ReduceLROnPlateau,LambdaLR
 
 def process_data(file_name:str='alltrain',max_conf:int=50):
     #Choose dataset to be modeled and create a folder where the descriptors will be stored
@@ -94,7 +94,8 @@ def train(
         earlystop=False,
         patience=30,
         epochs = 1000,
-        save_path='train'
+        save_path='train',
+        warmup_epochs=10
     ):
 
     set_seed(43)
@@ -123,6 +124,15 @@ def train(
     writer = SummaryWriter(log_dir=os.path.join(save_path,'tensorboard'))
     criterion = torch.nn.MSELoss(reduction='mean')
     optimizer = optim.Yogi(model.parameters(), lr=lr, weight_decay=weight_decay)
+    
+    # Warm up 学习率调度器
+    def lr_lambda(epoch):
+        if epoch < warmup_epochs:
+            return float(epoch) / float(max(1, warmup_epochs))
+        return 1.0
+
+    warmup_scheduler = LambdaLR(optimizer, lr_lambda)
+    
     scheduler = ReduceLROnPlateau(optimizer=optimizer, mode='min', factor=gamma, patience=step,)
 
     # 初始化用于保存loss的列表
@@ -180,7 +190,11 @@ def train(
         if min_loss_idx == epoch:
             best_parameters = model.state_dict()
             logging.fatal(f'loss decreased, epoch: {epoch},loss: {val_loss}')
-        scheduler.step(val_loss)
+        # 更新学习率
+        if epoch < warmup_epochs:
+            warmup_scheduler.step()
+        else:
+            scheduler.step(test_loss)
         writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], epoch)
 
         if earlystop:
@@ -209,20 +223,19 @@ def train(
                 weights.extend(w)
                 y_pred.extend(outputs.cpu().detach().numpy())
                 y_label.extend(labels.cpu().detach().numpy())
-            # weights = np.array(weights)
-            # weight_data = pd.DataFrame(weights)
-            # weight_data.to_csv(os.path.join(save_path, f'{file_name}_weight.csv'))
+            weights = np.array(weights)
+            weight_data = pd.DataFrame(weights)
+            weight_data.to_csv(os.path.join(save_path, f'{file_name}_weight.csv'))
             y_pred = np.array(y_pred)
             y_label = np.array(y_label)
             np.savetxt(os.path.join(save_path, f'{file_name}_pred.csv'), np.column_stack((y_label,y_pred)), delimiter=',')
+            eval_indicators = ["r2_score","mean_squared_error","mean_absolute_error","explained_variance_score","median_absolute_error"]
             r2 = r2_score(y_label, y_pred)
-            mse = mean_squared_error(y_label, y_pred)
-            # 将R2 score保存到txt文件
-            with open(os.path.join(save_path, f'{file_name}_r2_score.txt'), 'w') as f:
-                f.write(f'R2 score {file_name}: {r2}\n')
-                f.write(f'MSE Loss {file_name}: {mse}\n')
+            # 将R2 score保存到csv文件
+            with open(os.path.join(save_path, f'{file_name}_r2_score.csv'), 'w') as f:
+                for indicator in eval_indicators:
+                    f.write(f'{indicator},{eval(indicator)(y_label, y_pred)}\n')
             logging.info(f'R2 score {file_name}:{r2}')
-            logging.info(f'MSE Loss {file_name}:{mse}')
 
         # 使用新的函数来进行训练、测试和验证
         eval_model(train_dataloader, model, save_path, 'train')
@@ -230,6 +243,151 @@ def train(
         eval_model(val_dataloader, model, save_path, 'val')
     
     return model
+
+def cross_validate(
+        dataset:MolDataSet,
+        batch_size = 1,
+        instance_dropout = 0.95,
+        lr=0.01,
+        gamma=0.95,
+        step=10,
+        weight_decay=0.001,
+        earlystop=False,
+        patience=30,
+        epochs = 1000,
+        save_path='cross_validate'
+    ):
+    datasets = dataset.cross_val_split()
+    fold = 0
+    results = []
+
+    for train_dataset, val_dataset in datasets:
+        fold += 1
+        current_time = datetime.now().strftime('%Y-%m-%d_%H-%M')
+        save_path = os.path.join(save_path, f'Fold_{fold}')
+        set_seed(43)
+        train_dataloader = DataLoader(dataset=train_dataset,batch_size=batch_size,shuffle=True)
+        val_dataloader = DataLoader(dataset=val_dataset,batch_size=1,shuffle=True)
+
+        # 初始化模型
+        model = BagAttentionNet(ndim=(train_dataset[0][0][0].shape[1],256,128,64),det_ndim=(64,64),instance_dropout=instance_dropout)
+
+        model = model.double()
+
+        print(model)
+
+        # 检查是否有 CUDA 设备可用
+        if torch.cuda.is_available():
+            # 将模型转移到 CUDA
+            model = model.cuda()
+            # 包装成 DataParallel 模型以支持多张 GPU
+            model = torch.nn.DataParallel(model)
+
+        # 创建 TensorBoard 的 SummaryWriter
+        writer = SummaryWriter(log_dir=os.path.join(save_path,'tensorboard'))
+        criterion = torch.nn.MSELoss(reduction='mean')
+        optimizer = optim.Yogi(model.parameters(), lr=lr, weight_decay=weight_decay)
+        scheduler = ReduceLROnPlateau(optimizer=optimizer, mode='min', factor=gamma, patience=step,)
+
+        # 初始化用于保存loss的列表
+        train_losses = []
+        val_losses = []
+
+        # 早停
+        earlystopping = EarlyStopping(patience=patience,verbose=True)
+
+        # 训练模型
+        for epoch in tqdm(range(epochs), desc="Epochs", position=0, leave=True):
+            model.train()
+            train_loss = 0
+            train_progress = tqdm(enumerate(train_dataloader), desc="Batches", position=0, leave=True)
+            for i,((bags,mask),labels) in train_progress:
+
+                bags = bags.cuda()
+                mask = mask.cuda()
+                labels = labels.cuda()
+                weight,outputs = model(bags,mask)
+                loss = criterion(outputs, labels)
+                train_loss+=loss.item()
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                #scheduler.step()  # 更新学习率
+
+                if i % 10 == 0:
+                    logging.info(f'Epoch [{epoch + 1}/{epochs}], Step [{i + 1}/{len(train_dataloader)}], Loss: {loss.item():.4f}')
+            # 记录损失和学习率到 TensorBoard
+            # writer.add_scalar('Train Loss', loss.item(), i+(epoch+1)*batch_amount)
+            # train_losses.append(train_loss/len(train_dataloader))
+            # 验证模型
+            model.eval()
+            with torch.no_grad():
+
+                def calc_loss(dataset, name):
+                    weights, outputs = model(dataset.bags.cuda(), dataset.mask.cuda())
+                    loss = criterion(outputs, dataset.labels.cuda())
+                    logging.info(f'Epoch [{epoch + 1}/{epochs}], {name} Loss: {loss.item():.4f}')
+                    writer.add_scalar(f'{name} Loss MSE',loss.item(),epoch)
+                    return loss.item()
+                
+                train_loss = calc_loss(train_dataset, 'Train')
+                train_losses.append(train_loss)
+                
+                val_loss = calc_loss(val_dataset, 'Val')
+                val_losses.append(val_loss)
+
+            min_loss_idx = val_losses.index(min(val_losses))
+            if min_loss_idx == epoch:
+                best_parameters = model.state_dict()
+                logging.fatal(f'loss decreased, epoch: {epoch},loss: {val_loss}')
+            scheduler.step(val_loss)
+            writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], epoch)
+
+            if earlystop:
+                earlystopping(val_loss,model)
+                if earlystopping.early_stop:
+                    logging.info(f'Early stopping, loss: {str(val_loss)}')
+                    break
+        model.load_state_dict(best_parameters, strict=True)
+        loss_data = pd.DataFrame({'train_loss':train_losses,'val_loss':val_losses})
+        loss_data.to_csv(os.path.join(save_path,'loss.csv'),header=False,index=False)
+        writer.close()
+        model.eval()
+        with torch.no_grad():
+            def eval_model(dataloader, model, save_path, file_name):
+                progress = tqdm(enumerate(dataloader), desc=file_name, position=0, leave=True)
+                weights = []
+                y_pred = []
+                y_label = []
+                for i, ((bags, mask), labels) in progress:
+                    bags = bags.cuda()
+                    mask = mask.cuda()
+                    labels = labels.cuda()
+                    weight, outputs = model(bags, mask)
+                    w = weight.view(weight.shape[0], weight.shape[-1]).cpu()
+                    w = [i[j.bool().flatten()].detach().numpy() for i, j in zip(w, mask.cpu())]
+                    weights.extend(w)
+                    y_pred.extend(outputs.cpu().detach().numpy())
+                    y_label.extend(labels.cpu().detach().numpy())
+                weights = np.array(weights)
+                weight_data = pd.DataFrame(weights)
+                weight_data.to_csv(os.path.join(save_path, f'{file_name}_weight.csv'))
+                y_pred = np.array(y_pred)
+                y_label = np.array(y_label)
+                np.savetxt(os.path.join(save_path, f'{file_name}_pred.csv'), np.column_stack((y_label,y_pred)), delimiter=',')
+                eval_indicators = ["r2_score","mean_squared_error","mean_absolute_error","explained_variance_score","median_absolute_error"]
+                r2 = r2_score(y_label, y_pred)
+                # 将R2 score保存到csv文件
+                with open(os.path.join(save_path, f'{file_name}_r2_score.csv'), 'w') as f:
+                    for indicator in eval_indicators:
+                        f.write(f'{indicator},{eval(indicator)(y_label, y_pred)}\n')
+                logging.info(f'R2 score {file_name}:{r2}')
+
+            # 使用新的函数来进行训练、测试和验证
+            eval_model(train_dataloader, model, save_path, 'train')
+            eval_model(val_dataloader, model, save_path, 'val')
+        
+    pass
 
 if __name__ == '__main__':
     logging.basicConfig(
@@ -244,15 +402,16 @@ if __name__ == '__main__':
     max_conf = 50
     #process_data(file_name,max_conf)
     dataset=load_data(file_name,max_conf)
-    lr_list = [ 0.005,0.01,0.02,0.05 ]
-    gamma_list = [ 0.1,0.2,0.3 ]
-    step_list = [ 10,20,30 ]
+    lr_list = [ 0.02 ]
+    gamma_list = [ 0.1 ]
+    step_list = [ 20 ]
     for lr in lr_list:
         for gamma in gamma_list:
             for step in step_list:
                 current_time = datetime.now().strftime('%Y-%m-%d_%H-%M')
-                save_path = os.path.join('train', f'ReduceLROnPlateau_lr={str(lr)}_step={str(step)}_gamma={str(gamma)}_{current_time}')
-                model = train(dataset, lr=lr, gamma=gamma, step=step, save_path=save_path,earlystop=True,patience=40,weight_decay=0.01)
+                save_path = os.path.join('train', f'ReduceLROnPlateau_{current_time}')
+                model = train(dataset, lr=lr, gamma=gamma, step=step, save_path=save_path,earlystop=False,patience=40,weight_decay=0.01)
+                #cross_validate(dataset, lr=lr, gamma=gamma, step=step, save_path=save_path,earlystop=True,patience=40,weight_decay=0.01)
 
 
 
