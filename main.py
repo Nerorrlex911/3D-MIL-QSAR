@@ -95,7 +95,8 @@ def train(
         patience=30,
         epochs = 1000,
         save_path='train',
-        warmup_epochs=10
+        warmup_epochs=10,
+        min_lr=1e-6
     ):
 
     set_seed(43)
@@ -133,7 +134,7 @@ def train(
 
     warmup_scheduler = LambdaLR(optimizer, lr_lambda)
     
-    scheduler = ReduceLROnPlateau(optimizer=optimizer, mode='min', factor=gamma, patience=step,)
+    scheduler = ReduceLROnPlateau(optimizer=optimizer, mode='min', factor=gamma, patience=step,min_lr=min_lr)
 
     # 初始化用于保存loss的列表
     train_losses = []
