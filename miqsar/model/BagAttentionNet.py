@@ -92,6 +92,8 @@ class BagAttentionNet(nn.Module):
 
         """
         super().__init__()
+        self.ndim = ndim
+        self.det_ndim = det_ndim
         self.instance_dropout = instance_dropout
         input_dim = ndim[-1]
         self.main_net = MainNet(ndim)
@@ -150,6 +152,10 @@ class BagAttentionNet(nn.Module):
         out = self.estimator(x)
         out = out.view(-1, 1)
         return w, out
+    
+    def reinit_estimator(self):
+        self.estimator = Estimator(self.ndim[-1])
+        return self
     
 if __name__ == "__main__":
     from torch import randn

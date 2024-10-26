@@ -96,7 +96,8 @@ def train(
         epochs = 1000,
         save_path='train',
         warmup_epochs=10,
-        min_lr=1e-6
+        min_lr=1e-6,
+        pretrain_model=None
     ):
 
     set_seed(43)
@@ -109,10 +110,12 @@ def train(
 
     # 初始化模型
     model = BagAttentionNet(ndim=(train_dataset[0][0][0].shape[1],256,128,64),det_ndim=(64,64),instance_dropout=instance_dropout)
-
     model = model.double()
 
-    print(model)
+    if pretrain_model:
+        logging.info('load pretrain model')
+        model.load_state_dict(pretrain_model.state_dict(),strict=False)
+        model.reinit_estimator()
 
     # 检查是否有 CUDA 设备可用
     if torch.cuda.is_available():
@@ -403,6 +406,7 @@ if __name__ == '__main__':
     max_conf = 50
     #process_data(file_name,max_conf)
     dataset=load_data(file_name,max_conf)
+    pretrain_dataset = load_data('CHEMBL1075104',max_conf)
     lr_list = [ 0.02 ]
     gamma_list = [ 0.1 ]
     step_list = [ 20 ]
@@ -411,7 +415,9 @@ if __name__ == '__main__':
             for step in step_list:
                 current_time = datetime.now().strftime('%Y-%m-%d_%H-%M')
                 save_path = os.path.join('train', f'ReduceLROnPlateau_{current_time}')
-                model = train(dataset, lr=lr, gamma=gamma, step=step, save_path=save_path,earlystop=False,patience=40,weight_decay=0.01)
+                pretrain_model = train(pretrain_dataset, lr=lr, gamma=gamma, step=step, save_path=save_path,earlystop=False,patience=40,weight_decay=0.01)
+                
+                model = train(dataset, pretrain_model=pretrain_model, lr=lr, gamma=gamma, step=step, save_path=save_path,earlystop=False,patience=40,weight_decay=0.01)
                 #cross_validate(dataset, lr=lr, gamma=gamma, step=step, save_path=save_path,earlystop=True,patience=40,weight_decay=0.01)
 
 
